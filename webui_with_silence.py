@@ -63,7 +63,7 @@ tts = IndexTTS2(model_dir=cmd_args.model_dir,
                 use_cuda_kernel=cmd_args.cuda_kernel,
                 )
 
-def add_silence_to_audio(audio_path, silence_duration=0.5):
+def add_silence_to_audio(audio_path, silence_duration=1):
     """在生成的音频文件前添加静音"""
     try:
         # 读取原音频
@@ -203,8 +203,8 @@ def gen_single(emo_control_method,prompt, text,
                        verbose=cmd_args.verbose,
                        max_text_tokens_per_segment=int(max_text_tokens_per_segment),
                        **kwargs)
-    # 添加1秒静音
-    output = add_silence_to_audio(output, silence_duration=1.0)
+    # 添加0.5秒静音
+    output = add_silence_to_audio(output, silence_duration=0.5)
     return gr.update(value=output,visible=True)
 
 def update_prompt_audio():
