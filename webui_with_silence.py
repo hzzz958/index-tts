@@ -63,7 +63,7 @@ tts = IndexTTS2(model_dir=cmd_args.model_dir,
                 use_cuda_kernel=cmd_args.cuda_kernel,
                 )
 
-def add_silence_to_audio(audio_path, silence_duration=1.0):
+def add_silence_to_audio(audio_path, silence_duration=0.5):
     """在生成的音频文件前添加静音"""
     try:
         # 读取原音频
