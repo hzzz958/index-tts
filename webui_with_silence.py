@@ -63,6 +63,15 @@ tts = IndexTTS2(model_dir=cmd_args.model_dir,
                 use_cuda_kernel=cmd_args.cuda_kernel,
                 )
 
+# --- 新增：专门用于更新音频 Label 的通用函数 ---
+def update_audio_label_with_filename(filepath, base_label_key):
+    """提取上传的文件名并拼接到 Label 中"""
+    base_label = i18n(base_label_key)
+    if not filepath:
+        return gr.update(label=base_label)
+    filename = os.path.basename(filepath)
+    return gr.update(label=f"{base_label} - {filename}")
+
 def add_silence_to_audio(audio_path, silence_duration=1):
     """在生成的音频文件前添加静音"""
     try:
@@ -117,18 +126,18 @@ with open("examples/cases.jsonl", "r", encoding="utf-8") as f:
         example_cases.append([os.path.join("examples", example.get("prompt_audio", "sample_prompt.wav")),
                               EMO_CHOICES_ALL[example.get("emo_mode",0)],
                               example.get("text"),
-                             emo_audio_path,
-                             example.get("emo_weight",1.0),
-                             example.get("emo_text",""),
-                             example.get("emo_vec_1",0),
-                             example.get("emo_vec_2",0),
-                             example.get("emo_vec_3",0),
-                             example.get("emo_vec_4",0),
-                             example.get("emo_vec_5",0),
-                             example.get("emo_vec_6",0),
-                             example.get("emo_vec_7",0),
-                             example.get("emo_vec_8",0),
-                             ])
+                              emo_audio_path,
+                              example.get("emo_weight",1.0),
+                              example.get("emo_text",""),
+                              example.get("emo_vec_1",0),
+                              example.get("emo_vec_2",0),
+                              example.get("emo_vec_3",0),
+                              example.get("emo_vec_4",0),
+                              example.get("emo_vec_5",0),
+                              example.get("emo_vec_6",0),
+                              example.get("emo_vec_7",0),
+                              example.get("emo_vec_8",0),
+                              ])
 
 def get_example_cases(include_experimental = False):
     if include_experimental:
@@ -153,11 +162,11 @@ def format_glossary_markdown():
     return "\n".join(lines)
 
 def gen_single(emo_control_method,prompt, text,
-               emo_ref_path, emo_weight,
-               vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8,
-               emo_text,emo_random,
-               max_text_tokens_per_segment=120,
-                *args, progress=gr.Progress()):
+                emo_ref_path, emo_weight,
+                vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8,
+                emo_text,emo_random,
+                max_text_tokens_per_segment=120,
+                 *args, progress=gr.Progress()):
     output_path = None
     if not output_path:
         output_path = os.path.join("outputs", f"spk_{int(time.time())}.wav")
@@ -174,11 +183,11 @@ def gen_single(emo_control_method,prompt, text,
         "num_beams": num_beams,
         "repetition_penalty": float(repetition_penalty),
         "max_mel_tokens": int(max_mel_tokens),
-        # "typical_sampling": bool(typical_sampling),
-        # "typical_mass": float(typical_mass),
     }
     if type(emo_control_method) is not int:
-        emo_control_method = emo_control_method.value
+        # 改为通过 index 获取，确保逻辑健壮
+        emo_control_method = EMO_CHOICES_ALL.index(emo_control_method) if emo_control_method in EMO_CHOICES_ALL else 0
+        
     if emo_control_method == 0:  # emotion from speaker
         emo_ref_path = None  # remove external reference audio
     if emo_control_method == 1:  # emotion from reference audio
@@ -196,13 +205,13 @@ def gen_single(emo_control_method,prompt, text,
 
     print(f"Emo control mode:{emo_control_method},weight:{emo_weight},vec:{vec}")
     output = tts.infer(spk_audio_prompt=prompt, text=text,
-                       output_path=output_path,
-                       emo_audio_prompt=emo_ref_path, emo_alpha=emo_weight,
-                       emo_vector=vec,
-                       use_emo_text=(emo_control_method==3), emo_text=emo_text,use_random=emo_random,
-                       verbose=cmd_args.verbose,
-                       max_text_tokens_per_segment=int(max_text_tokens_per_segment),
-                       **kwargs)
+                        output_path=output_path,
+                        emo_audio_prompt=emo_ref_path, emo_alpha=emo_weight,
+                        emo_vector=vec,
+                        use_emo_text=(emo_control_method==3), emo_text=emo_text,use_random=emo_random,
+                        verbose=cmd_args.verbose,
+                        max_text_tokens_per_segment=int(max_text_tokens_per_segment),
+                        **kwargs)
     # 添加0.5秒静音
     output = add_silence_to_audio(output, silence_duration=0.5)
     return gr.update(value=output,visible=True)
@@ -331,8 +340,8 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
                         length_penalty = gr.Number(label="length_penalty", precision=None, value=0.0, minimum=-2.0, maximum=2.0, step=0.1)
                     max_mel_tokens = gr.Slider(label="max_mel_tokens", value=1500, minimum=50, maximum=tts.cfg.gpt.max_mel_tokens, step=10, info=i18n("生成Token最大数量，过小导致音频被截断"), key="max_mel_tokens")
                     # with gr.Row():
-                    #     typical_sampling = gr.Checkbox(label="typical_sampling", value=False, info="不建议使用")
-                    #     typical_mass = gr.Slider(label="typical_mass", value=0.9, minimum=0.0, maximum=1.0, step=0.1)
+                    #      typical_sampling = gr.Checkbox(label="typical_sampling", value=False, info="不建议使用")
+                    #      typical_mass = gr.Slider(label="typical_mass", value=0.9, minimum=0.0, maximum=1.0, step=0.1)
                 with gr.Column(scale=2):
                     gr.Markdown(f'**{i18n("分句设置")}** _{i18n("参数会影响音频质量和生成速度")}_')
                     with gr.Row():
@@ -395,12 +404,12 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
     example_table.click(on_example_click,
                         inputs=[example_table],
                         outputs=[prompt_audio,
-                                 emo_control_method,
-                                 input_text_single,
-                                 emo_upload,
-                                 emo_weight,
-                                 emo_text,
-                                 vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8]
+                                  emo_control_method,
+                                  input_text_single,
+                                  emo_upload,
+                                  emo_weight,
+                                  emo_text,
+                                  vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8]
     )
 
     def on_input_text_change(text, max_text_tokens_per_segment):
@@ -544,9 +553,31 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
         outputs=[segments_preview]
     )
 
-    prompt_audio.upload(update_prompt_audio,
-                         inputs=[],
-                         outputs=[gen_button])
+    # --- 修改处：整合原本的 update_prompt_audio 并加入 Label 更新逻辑 ---
+    def on_prompt_audio_ready(filepath):
+        # 既更新按钮交互性，又更新组件 Label 显示文件名
+        btn_update = update_prompt_audio()
+        label_update = update_audio_label_with_filename(filepath, "音色参考音频")
+        return btn_update, label_update
+
+    # 监听 prompt_audio 上传
+    prompt_audio.upload(on_prompt_audio_ready,
+                         inputs=[prompt_audio],
+                         outputs=[gen_button, prompt_audio])
+    
+    # 监听 prompt_audio 变化（如点击示例）
+    prompt_audio.change(lambda f: update_audio_label_with_filename(f, "音色参考音频"),
+                        inputs=[prompt_audio],
+                        outputs=[prompt_audio])
+
+    # 监听 emo_upload 上传与变化
+    emo_upload.upload(lambda f: update_audio_label_with_filename(f, "上传情感参考音频"),
+                       inputs=[emo_upload],
+                       outputs=[emo_upload])
+    
+    emo_upload.change(lambda f: update_audio_label_with_filename(f, "上传情感参考音频"),
+                      inputs=[emo_upload],
+                      outputs=[emo_upload])
 
     def on_demo_load():
         """页面加载时重新加载glossary数据"""
@@ -573,13 +604,12 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
 
     gen_button.click(gen_single,
                      inputs=[emo_control_method,prompt_audio, input_text_single, emo_upload, emo_weight,
-                            vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8,
-                             emo_text,emo_random,
-                             max_text_tokens_per_segment,
-                             *advanced_params,
-                     ],
-                     outputs=[output_audio])
-
+                             vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8,
+                              emo_text,emo_random,
+                              max_text_tokens_per_segment,
+                              *advanced_params,
+                      ],
+                      outputs=[output_audio])
 
 
 if __name__ == "__main__":
