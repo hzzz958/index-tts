@@ -229,8 +229,10 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
     with gr.Tab(i18n("音频生成")):
         with gr.Row():
             os.makedirs("prompts",exist_ok=True)
-            prompt_audio = gr.Audio(label=i18n("音色参考音频"),key="prompt_audio",
-                                    sources=["upload","microphone"],type="filepath")
+            with gr.Column():
+                prompt_audio = gr.Audio(label=i18n("音色参考音频"),key="prompt_audio",
+                                        sources=["upload","microphone"],type="filepath")
+                prompt_filename_display = gr.Markdown(value="", visible=False)  # ← 新增
             prompt_list = os.listdir("prompts")
             default = ''
             if prompt_list:
@@ -261,7 +263,9 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
         # 情感参考音频部分
         with gr.Group(visible=False) as emotion_reference_group:
             with gr.Row():
-                emo_upload = gr.Audio(label=i18n("上传情感参考音频"), type="filepath")
+                with gr.Column():
+                    emo_upload = gr.Audio(label=i18n("上传情感参考音频"), type="filepath")
+                    emo_filename_display = gr.Markdown(value="", visible=False)  # ← 新增
 
         # 情感随机采样
         with gr.Row(visible=False) as emotion_randomize_group:
@@ -547,6 +551,26 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
     prompt_audio.upload(update_prompt_audio,
                          inputs=[],
                          outputs=[gen_button])
+
+    # ↓↓↓ 新增：文件名显示，独立事件，不影响任何已有逻辑 ↓↓↓
+    def on_prompt_audio_change(audio_path):
+        if audio_path:
+            return gr.update(value=f"📎 **{os.path.basename(audio_path)}**", visible=True)
+        return gr.update(value="", visible=False)
+
+    prompt_audio.change(on_prompt_audio_change,
+                        inputs=[prompt_audio],
+                        outputs=[prompt_filename_display])
+
+    def on_emo_upload_change(audio_path):
+        if audio_path:
+            return gr.update(value=f"📎 **{os.path.basename(audio_path)}**", visible=True)
+        return gr.update(value="", visible=False)
+
+    emo_upload.change(on_emo_upload_change,
+                      inputs=[emo_upload],
+                      outputs=[emo_filename_display])
+    # ↑↑↑ 新增结束 ↑↑↑
 
     def on_demo_load():
         """页面加载时重新加载glossary数据"""
