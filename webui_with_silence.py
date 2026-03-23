@@ -158,6 +158,8 @@ def gen_single(emo_control_method,prompt, text,
                emo_text,emo_random,
                max_text_tokens_per_segment=120,
                 *args, progress=gr.Progress()):
+    print("\n" + "="*60, flush=True)
+    print(f"[gen_single] >>> 收到生成请求", flush=True)
     output_path = None
     if not output_path:
         output_path = os.path.join("outputs", f"spk_{int(time.time())}.wav")
@@ -194,18 +196,30 @@ def gen_single(emo_control_method,prompt, text,
         # erase empty emotion descriptions; `infer()` will then automatically use the main prompt
         emo_text = None
 
-    print(f"Emo control mode:{emo_control_method},weight:{emo_weight},vec:{vec}")
-    output = tts.infer(spk_audio_prompt=prompt, text=text,
-                       output_path=output_path,
-                       emo_audio_prompt=emo_ref_path, emo_alpha=emo_weight,
-                       emo_vector=vec,
-                       use_emo_text=(emo_control_method==3), emo_text=emo_text,use_random=emo_random,
-                       verbose=cmd_args.verbose,
-                       max_text_tokens_per_segment=int(max_text_tokens_per_segment),
-                       **kwargs)
-    # 添加0.5秒静音
-    output = add_silence_to_audio(output, silence_duration=0.5)
-    return gr.update(value=output,visible=True)
+    print(f"[gen_single] >>> 开始生成语音", flush=True)
+    print(f"[gen_single] prompt={prompt}", flush=True)
+    print(f"[gen_single] text={text!r}", flush=True)
+    print(f"[gen_single] output_path={output_path}", flush=True)
+    print(f"[gen_single] emo_control_method={emo_control_method}, emo_weight={emo_weight}, vec={vec}", flush=True)
+    print(f"[gen_single] emo_ref_path={emo_ref_path}, emo_text={emo_text!r}, emo_random={emo_random}", flush=True)
+    print(f"[gen_single] max_text_tokens_per_segment={max_text_tokens_per_segment}", flush=True)
+    print(f"[gen_single] kwargs={kwargs}", flush=True)
+    try:
+        output = tts.infer(spk_audio_prompt=prompt, text=text,
+                           output_path=output_path,
+                           emo_audio_prompt=emo_ref_path, emo_alpha=emo_weight,
+                           emo_vector=vec,
+                           use_emo_text=(emo_control_method==3), emo_text=emo_text,use_random=emo_random,
+                           verbose=cmd_args.verbose,
+                           max_text_tokens_per_segment=int(max_text_tokens_per_segment),
+                           **kwargs)
+        # 添加0.5秒静音
+        output = add_silence_to_audio(output, silence_duration=0.5)
+        print(f"[gen_single] <<< 生成成功！输出文件: {output}", flush=True)
+        return gr.update(value=output, visible=True)
+    except Exception as e:
+        print(f"[gen_single] !!! 生成失败: {e}", flush=True)
+        raise
 
 def update_prompt_audio():
     update_button = gr.update(interactive=True)
