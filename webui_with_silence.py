@@ -265,7 +265,11 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
         # 情感参考音频部分
         with gr.Group(visible=False) as emotion_reference_group:
             with gr.Row():
-                emo_upload = gr.Audio(label=i18n("上传情感参考音频"), type="filepath")
+                with gr.Column():
+                    emo_upload = gr.Audio(label=i18n("上传情感参考音频"), type="filepath")
+                    # ===== 新增：情感参考音频文件名显示 =====
+                    emo_filename_display = gr.Markdown(value="", visible=False)
+                    # ========================================
 
         # 情感随机采样
         with gr.Row(visible=False) as emotion_randomize_group:
@@ -563,6 +567,19 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
         on_prompt_audio_change,
         inputs=[prompt_audio],
         outputs=[filename_display]
+    )
+
+    # ===== 新增：情感参考音频文件名显示事件 =====
+    def on_emo_upload_change(audio_path):
+        if audio_path:
+            filename = os.path.basename(audio_path)
+            return gr.update(value=f"📎 **{filename}**", visible=True)
+        return gr.update(value="", visible=False)
+
+    emo_upload.change(
+        on_emo_upload_change,
+        inputs=[emo_upload],
+        outputs=[emo_filename_display]
     )
     # =================================================================
 
