@@ -158,8 +158,6 @@ def gen_single(emo_control_method,prompt, text,
                emo_text,emo_random,
                max_text_tokens_per_segment=120,
                 *args, progress=gr.Progress()):
-    print("\n" + "="*60, flush=True)
-    print(f"[gen_single] >>> 收到生成请求", flush=True)
     output_path = None
     if not output_path:
         output_path = os.path.join("outputs", f"spk_{int(time.time())}.wav")
@@ -196,30 +194,18 @@ def gen_single(emo_control_method,prompt, text,
         # erase empty emotion descriptions; `infer()` will then automatically use the main prompt
         emo_text = None
 
-    print(f"[gen_single] >>> 开始生成语音", flush=True)
-    print(f"[gen_single] prompt={prompt}", flush=True)
-    print(f"[gen_single] text={text!r}", flush=True)
-    print(f"[gen_single] output_path={output_path}", flush=True)
-    print(f"[gen_single] emo_control_method={emo_control_method}, emo_weight={emo_weight}, vec={vec}", flush=True)
-    print(f"[gen_single] emo_ref_path={emo_ref_path}, emo_text={emo_text!r}, emo_random={emo_random}", flush=True)
-    print(f"[gen_single] max_text_tokens_per_segment={max_text_tokens_per_segment}", flush=True)
-    print(f"[gen_single] kwargs={kwargs}", flush=True)
-    try:
-        output = tts.infer(spk_audio_prompt=prompt, text=text,
-                           output_path=output_path,
-                           emo_audio_prompt=emo_ref_path, emo_alpha=emo_weight,
-                           emo_vector=vec,
-                           use_emo_text=(emo_control_method==3), emo_text=emo_text,use_random=emo_random,
-                           verbose=cmd_args.verbose,
-                           max_text_tokens_per_segment=int(max_text_tokens_per_segment),
-                           **kwargs)
-        # 添加0.5秒静音
-        output = add_silence_to_audio(output, silence_duration=0.5)
-        print(f"[gen_single] <<< 生成成功！输出文件: {output}", flush=True)
-        return gr.update(value=output, visible=True)
-    except Exception as e:
-        print(f"[gen_single] !!! 生成失败: {e}", flush=True)
-        raise
+    print(f"Emo control mode:{emo_control_method},weight:{emo_weight},vec:{vec}")
+    output = tts.infer(spk_audio_prompt=prompt, text=text,
+                       output_path=output_path,
+                       emo_audio_prompt=emo_ref_path, emo_alpha=emo_weight,
+                       emo_vector=vec,
+                       use_emo_text=(emo_control_method==3), emo_text=emo_text,use_random=emo_random,
+                       verbose=cmd_args.verbose,
+                       max_text_tokens_per_segment=int(max_text_tokens_per_segment),
+                       **kwargs)
+    # 添加0.5秒静音
+    output = add_silence_to_audio(output, silence_duration=0.5)
+    return gr.update(value=output,visible=True)
 
 def update_prompt_audio():
     update_button = gr.update(interactive=True)
@@ -243,12 +229,8 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
     with gr.Tab(i18n("音频生成")):
         with gr.Row():
             os.makedirs("prompts",exist_ok=True)
-            with gr.Column():
-                prompt_audio = gr.Audio(label=i18n("音色参考音频"),key="prompt_audio",
-                                        sources=["upload","microphone"],type="filepath")
-                # ===== 新增：文件名显示组件，独立于 gen_single 的参数列表 =====
-                filename_display = gr.Markdown(value="", visible=False)
-                # =============================================================
+            prompt_audio = gr.Audio(label=i18n("音色参考音频"),key="prompt_audio",
+                                    sources=["upload","microphone"],type="filepath")
             prompt_list = os.listdir("prompts")
             default = ''
             if prompt_list:
@@ -279,11 +261,7 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
         # 情感参考音频部分
         with gr.Group(visible=False) as emotion_reference_group:
             with gr.Row():
-                with gr.Column():
-                    emo_upload = gr.Audio(label=i18n("上传情感参考音频"), type="filepath")
-                    # ===== 新增：情感参考音频文件名显示 =====
-                    emo_filename_display = gr.Markdown(value="", visible=False)
-                    # ========================================
+                emo_upload = gr.Audio(label=i18n("上传情感参考音频"), type="filepath")
 
         # 情感随机采样
         with gr.Row(visible=False) as emotion_randomize_group:
@@ -569,33 +547,6 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
     prompt_audio.upload(update_prompt_audio,
                          inputs=[],
                          outputs=[gen_button])
-
-    # ===== 新增：文件名显示事件，完全独立，不影响 gen_single 参数 =====
-    def on_prompt_audio_change(audio_path):
-        if audio_path:
-            filename = os.path.basename(audio_path)
-            return gr.update(value=f"📎 **{filename}**", visible=True)
-        return gr.update(value="", visible=False)
-
-    prompt_audio.change(
-        on_prompt_audio_change,
-        inputs=[prompt_audio],
-        outputs=[filename_display]
-    )
-
-    # ===== 新增：情感参考音频文件名显示事件 =====
-    def on_emo_upload_change(audio_path):
-        if audio_path:
-            filename = os.path.basename(audio_path)
-            return gr.update(value=f"📎 **{filename}**", visible=True)
-        return gr.update(value="", visible=False)
-
-    emo_upload.change(
-        on_emo_upload_change,
-        inputs=[emo_upload],
-        outputs=[emo_filename_display]
-    )
-    # =================================================================
 
     def on_demo_load():
         """页面加载时重新加载glossary数据"""
