@@ -447,6 +447,7 @@ class IndexTTS2:
 
         start_time = time.perf_counter()
 
+        # Emotion 处理
         if use_emo_text or emo_vector is not None:
             emo_audio_prompt = None
 
@@ -467,7 +468,7 @@ class IndexTTS2:
             emo_audio_prompt = spk_audio_prompt
             emo_alpha = 1.0
 
-        # ==================== 参考音频缓存（完全保留你原来的逻辑） ====================
+        # ==================== 参考音频缓存 ====================
         if self.cache_spk_cond is None or self.cache_spk_audio_prompt != spk_audio_prompt:
             if self.cache_spk_cond is not None:
                 self.cache_spk_cond = None
@@ -475,31 +476,26 @@ class IndexTTS2:
                 self.cache_s2mel_prompt = None
                 self.cache_mel = None
                 torch.cuda.empty_cache()
+
             audio, sr = self._load_and_cut_audio(spk_audio_prompt, 15, verbose)
             audio_22k = torchaudio.transforms.Resample(sr, 22050)(audio)
             audio_16k = torchaudio.transforms.Resample(sr, 16000)(audio)
 
             inputs = self.extract_features(audio_16k, sampling_rate=16000, return_tensors="pt")
-            input_features = inputs["input_features"]
-            attention_mask = inputs["attention_mask"]
-            input_features = input_features.to(self.device)
-            attention_mask = attention_mask.to(self.device)
+            input_features = inputs["input_features"].to(self.device)
+            attention_mask = inputs["attention_mask"].to(self.device)
             spk_cond_emb = self.get_emb(input_features, attention_mask)
 
             _, S_ref = self.semantic_codec.quantize(spk_cond_emb)
-            ref_mel = self.mel_fn(audio_22k.to(spk_cond_emb.device).float())
-            ref_target_lengths = torch.LongTensor([ref_mel.size(2)]).to(ref_mel.device)
-            feat = torchaudio.compliance.kaldi.fbank(audio_16k.to(ref_mel.device),
-                                                     num_mel_bins=80,
-                                                     dither=0,
-                                                     sample_frequency=16000)
+            ref_mel = self.mel_fn(audio_22k.to(self.device).float())
+            ref_target_lengths = torch.LongTensor([ref_mel.size(2)]).to(self.device)
+            feat = torchaudio.compliance.kaldi.fbank(audio_16k.to(self.device),
+                                                     num_mel_bins=80, dither=0, sample_frequency=16000)
             feat = feat - feat.mean(dim=0, keepdim=True)
             style = self.campplus_model(feat.unsqueeze(0))
 
-            prompt_condition = self.s2mel.models['length_regulator'](S_ref,
-                                                                     ylens=ref_target_lengths,
-                                                                     n_quantizers=3,
-                                                                     f0=None)[0]
+            prompt_condition = self.s2mel.models['length_regulator'](
+                S_ref, ylens=ref_target_lengths, n_quantizers=3, f0=None)[0]
 
             self.cache_spk_cond = spk_cond_emb
             self.cache_s2mel_style = style
@@ -518,12 +514,9 @@ class IndexTTS2:
                 torch.cuda.empty_cache()
             emo_audio, _ = self._load_and_cut_audio(emo_audio_prompt, 15, verbose, sr=16000)
             emo_inputs = self.extract_features(emo_audio, sampling_rate=16000, return_tensors="pt")
-            emo_input_features = emo_inputs["input_features"]
-            emo_attention_mask = emo_inputs["attention_mask"]
-            emo_input_features = emo_input_features.to(self.device)
-            emo_attention_mask = emo_attention_mask.to(self.device)
+            emo_input_features = emo_inputs["input_features"].to(self.device)
+            emo_attention_mask = emo_inputs["attention_mask"].to(self.device)
             emo_cond_emb = self.get_emb(emo_input_features, emo_attention_mask)
-
             self.cache_emo_cond = emo_cond_emb
             self.cache_emo_audio_prompt = emo_audio_prompt
         else:
@@ -558,29 +551,28 @@ class IndexTTS2:
                 text_tokens = torch.tensor(text_tokens, dtype=torch.int32, device=self.device).unsqueeze(0)
 
                 if verbose:
-                    print(text_tokens)
                     print(f"text_tokens shape: {text_tokens.shape}")
 
                 with torch.no_grad():
-                    with torch.amp.autocast(text_tokens.device.type, enabled=self.dtype is not None, dtype=self.dtype):
+                    with torch.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
                         emovec = self.gpt.merge_emovec(
                             spk_cond_emb,
                             emo_cond_emb,
-                            torch.tensor([spk_cond_emb.shape[-1]], device=text_tokens.device),
-                            torch.tensor([emo_cond_emb.shape[-1]], device=text_tokens.device),
+                            torch.tensor([spk_cond_emb.shape[-1]], device=self.device),
+                            torch.tensor([emo_cond_emb.shape[-1]], device=self.device),
                             alpha=emo_alpha
                         )
 
+                        # TODO: 如果你想让 emo_vector 生效，可以在这里加入混合逻辑
                         if emo_vector is not None:
                             weight_vector = torch.tensor(emo_vector, device=self.device)
-                            # 修复：这里原来用了未定义的 emovec_mat，改用原始 emovec（或你想混合的话再调整）
-                            # 如果你想用 emo_vector 完全覆盖，可以改成 emovec = emovec_mat（需先计算）
-                            pass  # 暂时保留原始 emovec，你可以后面再优化
+                            # 当前暂时使用原始 emovec，你可以后续再完善混合方式
+                            pass
 
                         codes, speech_conditioning_latent = self.gpt.inference_speech(
                             spk_cond_emb, text_tokens, emo_cond_emb,
-                            cond_lengths=torch.tensor([spk_cond_emb.shape[-1]], device=text_tokens.device),
-                            emo_cond_lengths=torch.tensor([emo_cond_emb.shape[-1]], device=text_tokens.device),
+                            cond_lengths=torch.tensor([spk_cond_emb.shape[-1]], device=self.device),
+                            emo_cond_lengths=torch.tensor([emo_cond_emb.shape[-1]], device=self.device),
                             emo_vec=emovec,
                             do_sample=True,
                             top_p=generation_kwargs.get("top_p", 0.8),
@@ -591,35 +583,35 @@ class IndexTTS2:
                             num_beams=generation_kwargs.get("num_beams", 3),
                             repetition_penalty=generation_kwargs.get("repetition_penalty", 10.0),
                             max_generate_length=generation_kwargs.get("max_mel_tokens", 1500),
-                            **{k: v for k, v in generation_kwargs.items() if k not in ["top_p", "top_k", "temperature", "length_penalty", "num_beams", "repetition_penalty", "max_mel_tokens"]}
+                            **generation_kwargs
                         )
 
-                # codes 处理
-                code_lens = []
-                max_code_len = 0
-                for code in codes:
-                    if self.stop_mel_token not in code:
-                        code_len = len(code)
-                    else:
-                        len_ = (code == self.stop_mel_token).nonzero(as_tuple=False)[0]
-                        code_len = len_[0].item() if len_.numel() > 0 else len(code)
-                    code_lens.append(code_len)
-                    max_code_len = max(max_code_len, code_len)
-                codes = codes[:, :max_code_len]
-                code_lens = torch.LongTensor(code_lens).to(self.device)
+                    # codes 处理
+                    code_lens_list = []
+                    max_code_len = 0
+                    for code in codes:
+                        if self.stop_mel_token not in code:
+                            code_len = len(code)
+                        else:
+                            stop_idx = (code == self.stop_mel_token).nonzero(as_tuple=False)
+                            code_len = stop_idx[0].item() if len(stop_idx) > 0 else len(code)
+                        code_lens_list.append(code_len)
+                        max_code_len = max(max_code_len, code_len)
 
-                # GPT forward + s2mel + bigvgan（保持你原来逻辑）
-                with torch.no_grad():
-                    use_speed = torch.zeros(spk_cond_emb.size(0)).to(spk_cond_emb.device).long()
+                    codes = codes[:, :max_code_len]
+                    code_lens = torch.LongTensor(code_lens_list).to(self.device)
+
+                    # GPT + s2mel + bigvgan
+                    use_speed = torch.zeros(spk_cond_emb.size(0), device=self.device).long()
                     latent = self.gpt(
                         speech_conditioning_latent,
                         text_tokens,
-                        torch.tensor([text_tokens.shape[-1]], device=text_tokens.device),
+                        torch.tensor([text_tokens.shape[-1]], device=self.device),
                         codes,
-                        torch.tensor([codes.shape[-1]], device=text_tokens.device),
+                        torch.tensor([codes.shape[-1]], device=self.device),
                         emo_cond_emb,
-                        cond_mel_lengths=torch.tensor([spk_cond_emb.shape[-1]], device=text_tokens.device),
-                        emo_cond_mel_lengths=torch.tensor([emo_cond_emb.shape[-1]], device=text_tokens.device),
+                        cond_mel_lengths=torch.tensor([spk_cond_emb.shape[-1]], device=self.device),
+                        emo_cond_mel_lengths=torch.tensor([emo_cond_emb.shape[-1]], device=self.device),
                         emo_vec=emovec,
                         use_speed=use_speed,
                     )
@@ -627,14 +619,16 @@ class IndexTTS2:
                     latent = self.s2mel.models['gpt_layer'](latent)
                     S_infer = self.semantic_codec.quantizer.vq2emb(codes.unsqueeze(1))
                     S_infer = S_infer.transpose(1, 2)
-                    S_infer = S_infer + latent
-                    target_lengths = (code_lens * 1.72).long()
+                    S_infer += latent
 
-                    cond = self.s2mel.models['length_regulator'](S_infer, ylens=target_lengths, n_quantizers=3, f0=None)[0]
+                    target_lengths = (code_lens * 1.72).long()
+                    cond = self.s2mel.models['length_regulator'](
+                        S_infer, ylens=target_lengths, n_quantizers=3, f0=None)[0]
+
                     cat_condition = torch.cat([prompt_condition, cond], dim=1)
                     vc_target = self.s2mel.models['cfm'].inference(
                         cat_condition,
-                        torch.LongTensor([cat_condition.size(1)]).to(cond.device),
+                        torch.LongTensor([cat_condition.size(1)]).to(self.device),
                         ref_mel, style, None, 25, inference_cfg_rate=0.7
                     )
                     vc_target = vc_target[:, :, ref_mel.size(-1):]
@@ -645,7 +639,7 @@ class IndexTTS2:
                 wav = torch.clamp(32767 * wav, -32767.0, 32767.0)
                 all_wavs.append(wav.cpu())
 
-        # ==================== 拼接 + 插入 pause ====================
+        # ==================== 拼接 + 插入 pause 静音 ====================
         final_wavs = []
         for i, wav in enumerate(all_wavs):
             final_wavs.append(wav)
@@ -666,7 +660,7 @@ class IndexTTS2:
 
         wav = torch.cat(final_wavs, dim=1)
 
-        # 保存部分
+        # ==================== 保存与统计 ====================
         end_time = time.perf_counter()
         wav_length = wav.shape[-1] / sampling_rate
         print(f">> Total inference time: {end_time - start_time:.2f} seconds")
@@ -688,7 +682,6 @@ class IndexTTS2:
                 return
             wav_data = wav.type(torch.int16).numpy().T
             yield (sampling_rate, wav_data)
-
 def find_most_similar_cosine(query_vector, matrix):
     query_vector = query_vector.float()
     matrix = matrix.float()
