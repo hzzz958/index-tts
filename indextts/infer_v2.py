@@ -489,6 +489,7 @@ class IndexTTS2:
             _, S_ref = self.semantic_codec.quantize(spk_cond_emb)
             ref_mel = self.mel_fn(audio_22k.to(self.device).float())
             ref_target_lengths = torch.LongTensor([ref_mel.size(2)]).to(self.device)
+
             feat = torchaudio.compliance.kaldi.fbank(audio_16k.to(self.device),
                                                      num_mel_bins=80, dither=0, sample_frequency=16000)
             feat = feat - feat.mean(dim=0, keepdim=True)
@@ -563,11 +564,9 @@ class IndexTTS2:
                             alpha=emo_alpha
                         )
 
-                        # TODO: 如果你想让 emo_vector 生效，可以在这里加入混合逻辑
+                        # TODO: emo_vector 混合逻辑（目前暂时跳过）
                         if emo_vector is not None:
-                            weight_vector = torch.tensor(emo_vector, device=self.device)
-                            # 当前暂时使用原始 emovec，你可以后续再完善混合方式
-                            pass
+                            pass   # 你以后可以在这里加入 emo_vector 的加权混合
 
                         codes, speech_conditioning_latent = self.gpt.inference_speech(
                             spk_cond_emb, text_tokens, emo_cond_emb,
@@ -601,7 +600,7 @@ class IndexTTS2:
                     codes = codes[:, :max_code_len]
                     code_lens = torch.LongTensor(code_lens_list).to(self.device)
 
-                    # GPT + s2mel + bigvgan
+                    # GPT forward + s2mel + bigvgan
                     use_speed = torch.zeros(spk_cond_emb.size(0), device=self.device).long()
                     latent = self.gpt(
                         speech_conditioning_latent,
@@ -639,7 +638,7 @@ class IndexTTS2:
                 wav = torch.clamp(32767 * wav, -32767.0, 32767.0)
                 all_wavs.append(wav.cpu())
 
-        # ==================== 拼接 + 插入 pause 静音 ====================
+        # ==================== 拼接 + 插入 pause ====================
         final_wavs = []
         for i, wav in enumerate(all_wavs):
             final_wavs.append(wav)
